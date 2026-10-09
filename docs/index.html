@@ -1,0 +1,311 @@
+<meta charset="utf-8">
+<title>Playa Hermosa Surf</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="7-day surf forecast for Playa Hermosa, Puntarenas, built from NOAA WAVEWATCH III">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+/* Layout: one narrow column; today's call up top, the 7-day chart, day cards, then hour-by-hour tables. */
+:root {
+  --bg: #f3f6f7;
+  --surface: #ffffff;
+  --ink: #0f2733;
+  --muted: #5b707a;
+  --rule: #d8e1e5;
+  --sea: #0e7c86;          /* accent: surf line and band */
+  --sea-soft: rgba(14, 124, 134, 0.18);
+  --night: rgba(15, 39, 51, 0.05);
+  --good: #2f8f4e;
+  --fairgood: #7aa83a;
+  --fair: #c98a12;
+  --poor: #c2452f;
+  --display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --body: "IBM Plex Sans", system-ui, sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0b1a21; --surface: #10242d; --ink: #e3eef1; --muted: #8fa6af; --rule: #23404b;
+    --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --night: rgba(255, 255, 255, 0.035);
+    --good: #5cc27c; --fairgood: #a4c95a; --fair: #e6ad3c; --poor: #ec7560; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0b1a21; --surface: #10242d; --ink: #e3eef1; --muted: #8fa6af; --rule: #23404b;
+  --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --night: rgba(255, 255, 255, 0.035);
+  --good: #5cc27c; --fairgood: #a4c95a; --fair: #e6ad3c; --poor: #ec7560; color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+.page > * { min-width: 0; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 var(--body); }
+.page { max-width: 960px; margin: 0 auto; padding: 0 16px; padding-block: 28px 48px; display: grid; gap: 28px; }
+
+header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 24px; }
+h1 { font: 700 2.4rem/1 var(--display); letter-spacing: 0.01em; margin: 0; text-wrap: balance; }
+.meta { color: var(--muted); font-size: 0.85rem; display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.chip { font: 500 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--fair); color: var(--fair); }
+
+.now { display: grid; grid-template-columns: auto 1fr; gap: 6px 28px; align-items: end; }
+.now .label { grid-column: 1 / -1; font: 500 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.now .big { font: 700 clamp(3.6rem, 12vw, 5.6rem)/0.9 var(--display); color: var(--sea); font-variant-numeric: tabular-nums; }
+.now .big small { font-size: 0.4em; color: var(--ink); margin-left: 4px; }
+.now dl { margin: 0; display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-size: 0.95rem; min-width: 0; }
+.now dt { color: var(--muted); }
+.now dd { margin: 0; font-variant-numeric: tabular-nums; }
+@media (max-width: 520px) { .now { grid-template-columns: 1fr; } }
+
+section h2 { font: 700 1.35rem/1.1 var(--display); letter-spacing: 0.02em; margin: 0 0 10px; }
+.chart-wrap { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 12px 8px 4px; overflow-x: auto; }
+.chart-wrap svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
+
+.days { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; }
+.day { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; padding: 10px 12px; display: grid; gap: 2px; }
+.day .name { font: 500 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); }
+.day .ft { font: 700 1.9rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.day .ft small { font-size: 0.55em; color: var(--muted); }
+.day .swell { font-size: 0.8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.pill { display: inline-block; font: 500 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.04em; padding: 1px 7px; border-radius: 99px; color: var(--surface); }
+.pill.light, .pill.offshore { background: var(--good); }
+.pill.cross-shore { background: var(--fair); }
+.pill.onshore { background: var(--poor); }
+
+details { background: var(--surface); border: 1px solid var(--rule); border-radius: 10px; }
+details + details { margin-top: 8px; }
+summary { cursor: pointer; padding: 10px 14px; font-weight: 600; display: flex; gap: 12px; align-items: center; }
+summary:focus-visible { outline: 2px solid var(--sea); outline-offset: 2px; border-radius: 10px; }
+summary .sum-ft { margin-left: auto; color: var(--muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.table-wrap { overflow-x: auto; padding: 0 6px 8px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.88rem; font-variant-numeric: tabular-nums; min-width: 520px; }
+th { text-align: left; font: 500 0.72rem var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 6px 8px; border-bottom: 1px solid var(--rule); }
+td { padding: 6px 8px; border-bottom: 1px solid var(--rule); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+td.num { text-align: right; }
+th.num { text-align: right; }
+
+table.hourly { min-width: 640px; }
+table.hourly td { vertical-align: middle; }
+.rating { display: flex; align-items: center; gap: 10px; }
+.rating .bar { width: 5px; align-self: stretch; min-height: 32px; border-radius: 3px; }
+.rating b { font: 700 1.25rem/1 var(--display); font-variant-numeric: tabular-nums; }
+.rating span { display: block; font: 500 0.68rem var(--mono); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.swell-cell { display: flex; align-items: center; gap: 6px; }
+.swell-cell.minor { color: var(--muted); }
+.arrow { display: inline-block; width: 1em; text-align: center; color: var(--sea); font-weight: 700; }
+.wind-cell { display: flex; align-items: center; gap: 6px; }
+.wind-cell .lbl { font: 500 0.7rem var(--mono); text-transform: uppercase; letter-spacing: 0.04em; }
+.day .rate { font: 500 0.7rem var(--mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 7px; border-radius: 99px; color: var(--surface); justify-self: start; }
+footer { color: var(--muted); font-size: 0.82rem; max-width: 68ch; display: grid; gap: 6px; }
+footer a { color: var(--sea); }
+.error { background: var(--surface); border: 1px solid var(--poor); border-radius: 10px; padding: 14px; }
+</style>
+
+<div class="page">
+  <header>
+    <h1>Playa Hermosa Surf</h1>
+    <div class="meta">
+      <span id="spot">Puntarenas, Costa Rica · beach faces SW</span>
+      <span id="run">Loading forecast…</span>
+      <span class="chip" title="Heights come straight from the physics formula and haven't been checked against real observations yet">Uncalibrated</span>
+    </div>
+  </header>
+
+  <div class="now" id="now" aria-live="polite"></div>
+
+  <section>
+    <h2>Next 7 days <span style="font: 400 0.8rem var(--body); color: var(--muted)">(surf height in feet)</span></h2>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 900 300" role="img" aria-label="Surf height forecast for the next 7 days"></svg></div>
+    <div class="legend">
+      <span><i style="background: var(--sea)"></i>Typical surf</span>
+      <span><i style="background: var(--sea-soft)"></i>Up to set waves</span>
+      <span><i style="background: var(--night)"></i>Night</span>
+      <span><i style="background: var(--good)"></i>Light or offshore wind</span>
+      <span><i style="background: var(--fair)"></i>Cross-shore</span>
+      <span><i style="background: var(--poor)"></i>Onshore</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Day by day <span style="font: 400 0.8rem var(--body); color: var(--muted)">(daylight, 6am to 6pm)</span></h2>
+    <div class="days" id="days"></div>
+  </section>
+
+  <section>
+    <h2>Hour by hour</h2>
+    <div id="hours"></div>
+  </section>
+
+  <footer>
+    <p>Surf height is estimated from NOAA's <a href="https://polar.ncep.noaa.gov/waves/" target="_blank" rel="noopener">WAVEWATCH III</a> (GFS-Wave) forecast for open water about 30 km offshore, converted to breaking height at the beach with the Komar–Gaylord formula, H<sub>b</sub> = 0.39 g<sup>1/5</sup>(T H<sub>0</sub><sup>2</sup> cos α)<sup>2/5</sup>. Set waves are 1.27 × typical. The rating is a simple rule from wind and swell period. Swell heights are offshore, in feet. Heights are face height in feet and are not yet calibrated against observations.</p>
+    <p>Times are Costa Rica time. Updated automatically every 6 hours.</p>
+  </footer>
+</div>
+
+<script>
+// ---- Settings you can change ---------------------------------------------
+const DATA_URL = "data/forecast.json";
+const DAY_START = 6, DAY_END = 18;        // daylight hours for the day cards
+// Simple condition rating: wind quality + swell period. Change the rules in rate() below.
+const RATINGS = [
+  { min: 3, label: "Good", color: "var(--good)" },
+  { min: 2, label: "Fair to good", color: "var(--fairgood)" },
+  { min: 1, label: "Fair", color: "var(--fair)" },
+  { min: -9, label: "Poor", color: "var(--poor)" },
+];
+function rate(h) {
+  let score = { light: 2, offshore: 2, "cross-shore": 1, onshore: 0 }[h.wind];
+  if (h.period_s >= 13) score += 1;      // long-period groundswell: cleaner, more powerful
+  if (h.period_s < 9) score -= 1;        // short-period wind swell: weak and messy
+  if (h.surf_ft < 2) score -= 1;         // too small to matter
+  return RATINGS.find(r => score >= r.min);
+}
+const WIND_COLORS = { light: "var(--good)", offshore: "var(--good)", "cross-shore": "var(--fair)", onshore: "var(--poor)" };
+
+// ---- Helpers ---------------------------------------------------------------
+const COMPASS = ["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"];
+const arrow = deg => `<span class="arrow" style="transform: rotate(${deg}deg)" aria-hidden="true">↓</span>`;   // points the way it travels
+const compass = deg => COMPASS[Math.round(((deg % 360) + 360) % 360 / 22.5) % 16];
+const TZ = "America/Costa_Rica";
+const fmt = (d, opts) => new Intl.DateTimeFormat("en-US", { timeZone: TZ, ...opts }).format(d);
+const localHour = d => Number(fmt(d, { hour: "numeric", hourCycle: "h23" }));
+const dayKey = d => fmt(d, { year: "numeric", month: "2-digit", day: "2-digit" });
+const range = (a, b) => `${Math.round(a)}–${Math.round(b)}`;
+const mostCommon = list => Object.entries(list.reduce((n, x) => (n[x] = (n[x] || 0) + 1, n), {})).sort((a, b) => b[1] - a[1])[0][0];
+const el = (tag, attrs = {}, text) => {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  if (text !== undefined) node.textContent = text;
+  return node;
+};
+
+// ---- Top: the call for right now -------------------------------------------
+function renderNow(hours) {
+  const now = Date.now();
+  const h = hours.find(x => x.date.getTime() >= now - 3 * 3600e3) || hours[0];
+  document.getElementById("now").innerHTML = `
+    <div class="label">Now · ${fmt(h.date, { weekday: "long", hour: "numeric" })}</div>
+    <div class="big">${range(h.surf_ft, h.sets_ft)}<small>ft</small></div>
+    <dl>
+      <dt>Swell</dt><dd>${h.swell_m.toFixed(1)} m at ${Math.round(h.period_s)} s from ${compass(h.swell_dir_deg)} (${h.swell_dir_deg}°)</dd>
+      <dt>Wind</dt><dd>${Math.round(h.wind_kn)} kn from ${compass(h.wind_dir_deg)} <span class="pill ${h.wind}">${h.wind}</span></dd>
+    </dl>`;
+}
+
+// ---- Chart -----------------------------------------------------------------
+function renderChart(hours) {
+  const svg = document.getElementById("chart");
+  const W = 900, H = 300, L = 40, R = 12, T = 14, B = 64;   // plot margins
+  const t0 = hours[0].date.getTime(), t1 = hours.at(-1).date.getTime();
+  const maxFt = Math.max(4, Math.ceil(Math.max(...hours.map(h => h.sets_ft)) / 2) * 2);
+  const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
+  const y = ft => T + (1 - ft / maxFt) * (H - T - B);
+  const base = H - B;
+
+  // night shading and day labels
+  for (let t = t0 - 24 * 3600e3; t <= t1; t += 3600e3) {
+    const d = new Date(t);
+    if (localHour(d) === DAY_END) {
+      const a = Math.max(x(t), L), b = Math.min(x(t + 12 * 3600e3), W - R);
+      if (b > a) svg.append(el("rect", { x: a, y: T, width: b - a, height: base - T, fill: "var(--night)" }));
+    }
+    if (localHour(d) === 12 && x(t) > L + 24 && x(t) < W - R - 24) {
+      svg.append(el("text", { x: x(t), y: base + 18, "text-anchor": "middle", "font-size": 12, fill: "var(--muted)", "font-family": "var(--mono)" },
+        fmt(d, { weekday: "short", day: "numeric" })));
+    }
+  }
+
+  // grid and y axis
+  for (let ft = 0; ft <= maxFt; ft += 2) {
+    svg.append(el("line", { x1: L, x2: W - R, y1: y(ft), y2: y(ft), stroke: "var(--rule)", "stroke-width": 1 }));
+    svg.append(el("text", { x: L - 8, y: y(ft) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)", "font-family": "var(--mono)" }, ft));
+  }
+
+  // band from typical surf up to sets, then the surf line
+  const top = hours.map(h => `${x(h.date.getTime())},${y(h.sets_ft)}`);
+  const bottom = hours.map(h => `${x(h.date.getTime())},${y(h.surf_ft)}`).reverse();
+  svg.append(el("polygon", { points: [...top, ...bottom].join(" "), fill: "var(--sea-soft)" }));
+  svg.append(el("polyline", { points: hours.map(h => `${x(h.date.getTime())},${y(h.surf_ft)}`).join(" "), fill: "none", stroke: "var(--sea)", "stroke-width": 2.5, "stroke-linejoin": "round" }));
+
+  // wind strip under the axis
+  const cell = (W - L - R) / hours.length;
+  hours.forEach(h => {
+    const box = el("rect", { x: x(h.date.getTime()) - cell / 2 + 1, y: base + 30, width: Math.max(cell - 2, 2), height: 10, rx: 2, fill: WIND_COLORS[h.wind] });
+    box.append(el("title", {}, `${fmt(h.date, { weekday: "short", hour: "numeric" })}: ${Math.round(h.wind_kn)} kn ${compass(h.wind_dir_deg)}, ${h.wind}`));
+    svg.append(box);
+  });
+  svg.append(el("text", { x: L - 8, y: base + 39, "text-anchor": "end", "font-size": 11, fill: "var(--muted)", "font-family": "var(--mono)" }, "wind"));
+}
+
+// ---- Day cards and hourly tables --------------------------------------------
+function groupByDay(hours) {
+  const days = new Map();
+  hours.forEach(h => { const k = dayKey(h.date); if (!days.has(k)) days.set(k, []); days.get(k).push(h); });
+  return [...days.values()];
+}
+
+function renderDays(days) {
+  document.getElementById("days").innerHTML = days.map(list => {
+    const light = list.filter(h => localHour(h.date) >= DAY_START && localHour(h.date) <= DAY_END);
+    const use = light.length ? light : list;
+    const best = use.reduce((a, b) => (b.surf_ft > a.surf_ft ? b : a));
+    const wind = mostCommon(use.map(h => h.wind));
+    const r = rate(best);
+    return `<div class="day">
+      <span class="name">${fmt(list[0].date, { weekday: "short", day: "numeric" })}</span>
+      <span class="ft">${range(best.surf_ft, best.sets_ft)}<small> ft</small></span>
+      <span class="swell">${Math.round(best.period_s)} s ${compass(best.swell_dir_deg)}</span>
+      <span class="rate" style="background: ${r.color}">${r.label}</span>
+      <span class="swell">Wind mostly ${wind}</span>
+    </div>`;
+  }).join("");
+}
+
+function renderHours(days) {
+  const swellCell = (sw, minor) => sw.ft < 0.3 ? `<td class="swell-cell minor">–</td>` :
+    `<td><div class="swell-cell${minor ? " minor" : ""}">${arrow(sw.deg)}<span>${sw.ft.toFixed(1)} ft · ${sw.s} s · ${compass(sw.deg)} ${sw.deg}°</span></div></td>`;
+  document.getElementById("hours").innerHTML = days.map((list, i) => {
+    const maxSurf = Math.max(...list.map(h => h.surf_ft)), maxSets = Math.max(...list.map(h => h.sets_ft));
+    const rows = list.map(h => {
+      const r = rate(h);
+      return `<tr>
+        <td>${fmt(h.date, { hour: "numeric" })}</td>
+        <td><div class="rating"><i class="bar" style="background: ${r.color}"></i><div><b>${range(h.surf_ft, h.sets_ft)} ft</b><span>${r.label}</span></div></div></td>
+        ${swellCell(h.swells[0], false)}
+        ${swellCell(h.swells[1], true)}
+        <td><div class="wind-cell">${arrow(h.wind_dir_deg)}<span>${Math.round(h.wind_kn)} kn ${compass(h.wind_dir_deg)}</span><span class="lbl" style="color: ${WIND_COLORS[h.wind]}">${h.wind}</span></div></td>
+      </tr>`;
+    }).join("");
+    return `<details${i === 0 ? " open" : ""}>
+      <summary>${fmt(list[0].date, { weekday: "long", month: "short", day: "numeric" })}<span class="sum-ft">${range(maxSurf, maxSets)} ft</span></summary>
+      <div class="table-wrap"><table class="hourly">
+        <thead><tr><th>Time</th><th>Surf · rating</th><th>Primary swell</th><th>Secondary swell</th><th>Wind</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table></div>
+    </details>`;
+  }).join("");
+}
+
+// ---- Load the data and draw everything --------------------------------------
+fetch(DATA_URL, { cache: "no-store" })
+  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+  .then(data => {
+    const hours = data.hours.map(h => ({ ...h, date: new Date(h.time) }));
+    const run = new Date(data.model_run_utc);
+    document.getElementById("run").textContent =
+      `NOAA model run ${fmt(run, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Costa Rica time`;
+    renderNow(hours);
+    renderChart(hours);
+    const days = groupByDay(hours);
+    renderDays(days);
+    renderHours(days);
+  })
+  .catch(err => {
+    document.getElementById("now").innerHTML =
+      `<div class="error">The forecast data didn't load (${err.message}). It refreshes every 6 hours, so try again shortly.</div>`;
+    document.getElementById("run").textContent = "Forecast unavailable";
+  });
+</script>

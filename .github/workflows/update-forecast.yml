@@ -25,6 +25,6 @@ jobs:
         run: |
           git config user.name "forecast-bot"
           git config user.email "forecast-bot@users.noreply.github.com"
-          git add docs/data/forecast.json
+          git add -A docs/data/
           git diff --cached --quiet || git commit -m "Update forecast"
           git push

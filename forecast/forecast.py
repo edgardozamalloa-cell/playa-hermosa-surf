@@ -20,11 +20,18 @@ import requests
 import xarray as xr
 
 # ---------------------------------------------------------------- settings
-SPOT = "Playa Hermosa, Puntarenas, Costa Rica"
-LATITUDE = 9.25            # offshore model grid point, degrees north
-LONGITUDE = 275.25         # degrees east (= 84.75 W)
+# One entry per surf spot. "lat"/"lon" is the nearest model grid point in open water
+# (degrees north / degrees east, so 84.75 W = 275.25 E). "facing" is the compass
+# direction the beach looks out to sea; both facings are estimates from the map.
+# "scale" corrects the physics estimate to match surf reports from the beach
+# (1.0 = no correction yet); "reports" is how many reports it's based on.
+SPOTS = {
+    "playa-hermosa": {"name": "Playa Hermosa", "area": "Puntarenas, near Jacó",
+                      "lat": 9.25, "lon": 275.25, "facing": 225, "scale": 1.0, "reports": 0},
+    "playitas":      {"name": "Playitas", "area": "Manuel Antonio, Quepos",
+                      "lat": 9.25, "lon": 275.75, "facing": 230, "scale": 0.78, "reports": 3},
+}
 FORECAST_HOURS = range(0, 169, 3)   # 7 days, every 3 hours
-BEACH_FACING_DEG = 225     # direction the beach faces (225 = southwest), an estimate
 LIGHT_WIND_MS = 3.0        # below this the wind barely matters
 G = 9.81
 M_TO_FT = 3.281
@@ -46,7 +53,7 @@ FIELDS = {
 }
 
 BUCKET = "https://noaa-gfs-bdp-pds.s3.amazonaws.com"
-OUTPUT = Path(__file__).resolve().parent.parent / "docs" / "data" / "forecast.json"
+OUTPUT_DIR = Path(__file__).resolve().parent.parent / "docs" / "data"
 
 
 # ---------------------------------------------------------------- download
@@ -96,32 +103,40 @@ def byte_ranges(url):
     return ranges
 
 
-def value_at_point(grib_bytes):
+def values_at_spots(grib_bytes):
+    """Open one downloaded field and return {spot slug: value at that spot's grid point}."""
     with tempfile.NamedTemporaryFile(suffix=".grib2", delete=False) as f:
         f.write(grib_bytes)
         path = f.name
     try:
         ds = xr.open_dataset(path, engine="cfgrib", backend_kwargs={"indexpath": ""})
-        variable = list(ds.data_vars)[0]
-        point = ds[variable].sel(latitude=LATITUDE, longitude=LONGITUDE, method="nearest")
-        return float(point.values)
+        field = ds[list(ds.data_vars)[0]]
+        return {slug: float(field.sel(latitude=spot["lat"], longitude=spot["lon"], method="nearest"))
+                for slug, spot in SPOTS.items()}
     finally:
         os.remove(path)
 
 
-def download_forecast(run_time):
-    def download_hour(hour):
-        url = file_url(run_time, hour)
-        row = {"time_utc": run_time + dt.timedelta(hours=hour)}
-        for key, byte_range in byte_ranges(url).items():
-            row[FIELDS[key]] = value_at_point(download(url, byte_range).content)
-        return row
+def download_hour(run_time, hour):
+    """Download every field for one forecast hour; return {spot slug: row}."""
+    url = file_url(run_time, hour)
+    rows = {slug: {"time_utc": run_time + dt.timedelta(hours=hour)} for slug in SPOTS}
+    for key, byte_range in byte_ranges(url).items():
+        for slug, value in values_at_spots(download(url, byte_range).content).items():
+            rows[slug][FIELDS[key]] = value
+    return rows
 
+
+def download_forecast(run_time):
+    """Return {spot slug: DataFrame of the forecast at that spot}."""
     with ThreadPoolExecutor(max_workers=8) as pool:
-        rows = list(pool.map(download_hour, FORECAST_HOURS))
-    forecast = pd.DataFrame(rows).set_index("time_utc")[list(FIELDS.values())]
-    forecast.index = forecast.index.tz_convert(TIMEZONE)
-    return forecast
+        hours = list(pool.map(lambda h: download_hour(run_time, h), FORECAST_HOURS))
+    forecasts = {}
+    for slug in SPOTS:
+        df = pd.DataFrame([h[slug] for h in hours]).set_index("time_utc")[list(FIELDS.values())]
+        df.index = df.index.tz_convert(TIMEZONE)
+        forecasts[slug] = df
+    return forecasts
 
 
 # ---------------------------------------------------------------- physics
@@ -130,15 +145,15 @@ def angle_difference(a, b):
     return (a - b + 180) % 360 - 180
 
 
-def breaker_height(H0, T, direction_from):
+def breaker_height(H0, T, direction_from, facing):
     """Komar-Gaylord breaker height (m): 0.39 g^(1/5) (T H0^2 cos(alpha))^(2/5)."""
-    alpha = np.radians(angle_difference(direction_from, BEACH_FACING_DEG))
+    alpha = np.radians(angle_difference(direction_from, facing))
     cos_alpha = np.clip(np.cos(alpha), 0, None)
     return 0.39 * G**0.2 * (T * H0**2 * cos_alpha) ** 0.4
 
 
-def wind_quality(speed, direction_from):
-    offshore_direction = (BEACH_FACING_DEG + 180) % 360
+def wind_quality(speed, direction_from, facing):
+    offshore_direction = (facing + 180) % 360
     off_angle = abs(angle_difference(direction_from, offshore_direction))
     if speed < LIGHT_WIND_MS:
         return "light"
@@ -149,11 +164,11 @@ def wind_quality(speed, direction_from):
     return "cross-shore"
 
 
-def surf_estimate(forecast):
+def surf_estimate(forecast, facing, scale=1.0):
     surf = pd.DataFrame(index=forecast.index)
-    s1 = breaker_height(forecast["swell1_height_m"], forecast["swell1_period_s"], forecast["swell1_direction_deg"])
-    s2 = breaker_height(forecast["swell2_height_m"], forecast["swell2_period_s"], forecast["swell2_direction_deg"])
-    surf["surf_ft"] = np.sqrt(s1**2 + s2**2) * M_TO_FT
+    s1 = breaker_height(forecast["swell1_height_m"], forecast["swell1_period_s"], forecast["swell1_direction_deg"], facing)
+    s2 = breaker_height(forecast["swell2_height_m"], forecast["swell2_period_s"], forecast["swell2_direction_deg"], facing)
+    surf["surf_ft"] = np.sqrt(s1**2 + s2**2) * M_TO_FT * scale
     surf["sets_ft"] = 1.27 * surf["surf_ft"]
     surf["swell_m"] = forecast["swell1_height_m"]
     surf["period_s"] = forecast["swell1_period_s"]
@@ -163,12 +178,12 @@ def surf_estimate(forecast):
     surf["swell2_dir_deg"] = forecast["swell2_direction_deg"]
     surf["wind_kn"] = forecast["wind_speed_ms"] * MS_TO_KN
     surf["wind_dir_deg"] = forecast["wind_direction_deg"]
-    surf["wind"] = [wind_quality(s, d) for s, d in zip(forecast["wind_speed_ms"], forecast["wind_direction_deg"])]
+    surf["wind"] = [wind_quality(s, d, facing) for s, d in zip(forecast["wind_speed_ms"], forecast["wind_direction_deg"])]
     return surf
 
 
 # ---------------------------------------------------------------- output
-def to_json(surf, run_time):
+def to_json(slug, surf, run_time):
     hours = [
         {
             "time": t.isoformat(),
@@ -188,11 +203,14 @@ def to_json(surf, run_time):
         for t, r in surf.iterrows()
     ]
     return {
-        "spot": SPOT,
+        "slug": slug,
+        "spot": SPOTS[slug]["name"],
+        "area": SPOTS[slug]["area"],
         "model_run_utc": run_time.isoformat(),
         "generated_utc": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
-        "beach_facing_deg": BEACH_FACING_DEG,
-        "calibrated": False,
+        "beach_facing_deg": SPOTS[slug]["facing"],
+        "scale": SPOTS[slug]["scale"],
+        "reports_used": SPOTS[slug]["reports"],
         "hours": hours,
     }
 
@@ -200,11 +218,14 @@ def to_json(surf, run_time):
 def main():
     run_time = latest_complete_run()
     print("Using model run", run_time.strftime("%Y-%m-%d %H:%M UTC"))
-    forecast = download_forecast(run_time)
-    surf = surf_estimate(forecast)
-    OUTPUT.parent.mkdir(parents=True, exist_ok=True)
-    OUTPUT.write_text(json.dumps(to_json(surf, run_time), indent=1))
-    print("Wrote", OUTPUT, "with", len(surf), "forecast times")
+    forecasts = download_forecast(run_time)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    for slug, forecast in forecasts.items():
+        surf = surf_estimate(forecast, SPOTS[slug]["facing"], SPOTS[slug]["scale"])
+        (OUTPUT_DIR / f"{slug}.json").write_text(json.dumps(to_json(slug, surf, run_time), indent=1))
+        print("Wrote", slug, "with", len(surf), "forecast times")
+    spot_list = [{"slug": slug, "name": s["name"], "area": s["area"]} for slug, s in SPOTS.items()]
+    (OUTPUT_DIR / "spots.json").write_text(json.dumps(spot_list, indent=1))
 
 
 if __name__ == "__main__":

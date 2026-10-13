@@ -101,18 +101,22 @@ table.hourly td { vertical-align: middle; }
 .day .rate { font: 500 0.7rem var(--mono); text-transform: uppercase; letter-spacing: 0.05em; padding: 1px 7px; border-radius: 99px; color: var(--surface); justify-self: start; }
 footer { color: var(--muted); font-size: 0.82rem; max-width: 68ch; display: grid; gap: 6px; }
 footer a { color: var(--sea); }
+.spots { display: flex; flex-wrap: wrap; gap: 8px; }
+.spots a { font: 600 1rem var(--display); letter-spacing: 0.03em; text-transform: uppercase; text-decoration: none; color: var(--sea); border: 1px solid var(--sea); border-radius: 99px; padding: 4px 14px; }
+.spots a[aria-current="page"] { background: var(--sea); color: var(--surface); }
 .error { background: var(--surface); border: 1px solid var(--poor); border-radius: 10px; padding: 14px; }
 </style>
 
 <div class="page">
   <header>
-    <h1>Playa Hermosa Surf</h1>
+    <h1 id="title">Surf Forecast</h1>
     <div class="meta">
-      <span id="spot">Puntarenas, Costa Rica · beach faces SW</span>
+      <span id="spot"></span>
       <span id="run">Loading forecast…</span>
-      <span class="chip" title="Heights come straight from the physics formula and haven't been checked against real observations yet">Uncalibrated</span>
+      <span class="chip" id="calib"></span>
     </div>
   </header>
+  <nav class="spots" id="spots" aria-label="Choose a spot"></nav>
 
   <div class="now" id="now" aria-live="polite"></div>
 
@@ -140,14 +144,14 @@ footer a { color: var(--sea); }
   </section>
 
   <footer>
-    <p>Surf height is estimated from NOAA's <a href="https://polar.ncep.noaa.gov/waves/" target="_blank" rel="noopener">WAVEWATCH III</a> (GFS-Wave) forecast for open water about 30 km offshore, converted to breaking height at the beach with the Komar–Gaylord formula, H<sub>b</sub> = 0.39 g<sup>1/5</sup>(T H<sub>0</sub><sup>2</sup> cos α)<sup>2/5</sup>. Set waves are 1.27 × typical. The rating is a simple rule from wind and swell period. Swell heights are offshore, in feet. Heights are face height in feet and are not yet calibrated against observations.</p>
+    <p>Surf height is estimated from NOAA's <a href="https://polar.ncep.noaa.gov/waves/" target="_blank" rel="noopener">WAVEWATCH III</a> (GFS-Wave) forecast for open water about 30 km offshore, converted to breaking height at the beach with the Komar–Gaylord formula, H<sub>b</sub> = 0.39 g<sup>1/5</sup>(T H<sub>0</sub><sup>2</sup> cos α)<sup>2/5</sup>. Set waves are 1.27 × typical. The rating is a simple rule from wind and swell period. Swell heights are offshore, in feet. Heights are face height in feet, scaled per spot to match surf reports from the beach where we have them.</p>
     <p>Times are Costa Rica time. Updated automatically every 6 hours.</p>
   </footer>
 </div>
 
 <script>
 // ---- Settings you can change ---------------------------------------------
-const DATA_URL = "data/forecast.json";
+const DATA_DIR = "data/";
 const DAY_START = 6, DAY_END = 18;        // daylight hours for the day cards
 // Simple condition rating: wind quality + swell period. Change the rules in rate() below.
 const RATINGS = [
@@ -290,11 +294,31 @@ function renderHours(days) {
 }
 
 // ---- Load the data and draw everything --------------------------------------
-fetch(DATA_URL, { cache: "no-store" })
-  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-  .then(data => {
+const getJSON = url => fetch(url, { cache: "no-store" })
+  .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); });
+let SPOT_LIST = [];
+
+function showSpot(slug) {
+  document.querySelectorAll("#spots a").forEach(a => {
+    if (a.dataset.slug === slug) a.setAttribute("aria-current", "page");
+    else a.removeAttribute("aria-current");
+  });
+  document.getElementById("run").textContent = "Loading forecast…";
+  getJSON(`${DATA_DIR}${slug}.json`).then(data => {
     const hours = data.hours.map(h => ({ ...h, date: new Date(h.time) }));
     const run = new Date(data.model_run_utc);
+    document.title = `${data.spot} Surf Forecast`;
+    document.getElementById("title").textContent = `${data.spot} Surf`;
+    const facing = compass(data.beach_facing_deg);
+    document.getElementById("spot").textContent = `${data.area}, Costa Rica · beach faces ${facing}`;
+    const calib = document.getElementById("calib");
+    if (data.reports_used > 0) {
+      calib.textContent = `Calibrated · ${data.reports_used} reports`;
+      calib.title = `Physics estimate scaled by ${data.scale} to match surf reports from the beach`;
+    } else {
+      calib.textContent = "Uncalibrated";
+      calib.title = "Heights come straight from the physics formula and haven't been checked against real observations yet";
+    }
     document.getElementById("run").textContent =
       `NOAA model run ${fmt(run, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Costa Rica time`;
     renderNow(hours);
@@ -302,10 +326,25 @@ fetch(DATA_URL, { cache: "no-store" })
     const days = groupByDay(hours);
     renderDays(days);
     renderHours(days);
-  })
-  .catch(err => {
-    document.getElementById("now").innerHTML =
-      `<div class="error">The forecast data didn't load (${err.message}). It refreshes every 6 hours, so try again shortly.</div>`;
-    document.getElementById("run").textContent = "Forecast unavailable";
-  });
+  }).catch(showError);
+}
+
+function showError(err) {
+  document.getElementById("now").innerHTML =
+    `<div class="error">The forecast data didn't load (${err.message}). It refreshes every 6 hours, so try again shortly.</div>`;
+  document.getElementById("run").textContent = "Forecast unavailable";
+}
+
+function currentSlug() {
+  const want = location.hash.slice(1);
+  return SPOT_LIST.some(s => s.slug === want) ? want : SPOT_LIST[0].slug;
+}
+
+getJSON(`${DATA_DIR}spots.json`).then(list => {
+  SPOT_LIST = list;
+  document.getElementById("spots").innerHTML =
+    list.map(s => `<a href="#${s.slug}" data-slug="${s.slug}">${s.name}</a>`).join("");
+  window.addEventListener("hashchange", () => showSpot(currentSlug()));
+  showSpot(currentSlug());
+}).catch(showError);
 </script>

@@ -1,0 +1,28 @@
+# Run by hand (Actions tab > Fetch bathymetry > Run workflow).
+# Downloads public seafloor depth grids for the coast from Jacó to Dominical
+# and saves them in data/bathymetry/ for the refraction work.
+name: Fetch bathymetry
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download GMRT and ETOPO 2022 grids
+        run: |
+          mkdir -p data/bathymetry
+          box="minlongitude=-84.85&maxlongitude=-83.70&minlatitude=8.95&maxlatitude=9.70"
+          curl -fsSL --retry 3 -o data/bathymetry/gmrt.asc \
+            "https://www.gmrt.org/services/GridServer?${box}&format=esriascii&resolution=max" || echo "GMRT failed"
+          curl -fsSL --retry 3 -o data/bathymetry/etopo2022_15s.csv \
+            "https://www.ngdc.noaa.gov/thredds/ncss/global/ETOPO2022/15s/15s_surface_elev_netcdf/ETOPO_2022_v1_15s_N15W090_surface.nc?var=z&north=9.70&south=8.95&west=-84.85&east=-83.70&accept=csv" || echo "ETOPO failed"
+          ls -la data/bathymetry; head -c 600 data/bathymetry/* || true
+      - name: Save
+        run: |
+          git config user.name "forecast-bot"
+          git config user.email "forecast-bot@users.noreply.github.com"
+          git add data/bathymetry
+          git diff --cached --quiet || git commit -m "Add bathymetry grids"
+          git pull --rebase origin main && git push

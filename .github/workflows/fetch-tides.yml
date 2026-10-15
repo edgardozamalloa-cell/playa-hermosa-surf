@@ -1,0 +1,30 @@
+# Run by hand (Actions tab > Fetch tide constants > Run workflow).
+# Downloads NASA's free GOT4.10c tide model, reads the tidal constants at each
+# spot, and saves the small result to forecast/tide_constants.json.
+name: Fetch tide constants
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt netCDF4
+      - name: Download GOT4.10c
+        run: |
+          curl -fsSL --retry 3 -o got.tar.gz https://earth.gsfc.nasa.gov/sites/default/files/2023-12/got4.10c.tar.gz
+          mkdir got && tar -xzf got.tar.gz -C got
+          find got -name "*.nc" | head -30
+      - name: Extract constants
+        run: python forecast/extract_tides.py "$(dirname "$(find got -path '*grids_oceantide_netcdf*' -name '*.nc' | head -1)")"
+      - name: Save
+        run: |
+          git config user.name "forecast-bot"
+          git config user.email "forecast-bot@users.noreply.github.com"
+          git add forecast/tide_constants.json
+          git diff --cached --quiet || git commit -m "Add tide constants"
+          git pull --rebase origin main && git push

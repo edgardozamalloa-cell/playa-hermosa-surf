@@ -23,15 +23,16 @@ import xarray as xr
 # One entry per surf spot. "lat"/"lon" is the nearest model grid point in open water
 # (degrees north / degrees east, so 84.75 W = 275.25 E). "facing" is the compass
 # direction the beach looks out to sea; both facings are estimates from the map.
+# "beach" is the spot itself (lat, lon), used for tides.
 # "scale" corrects the physics estimate to match surf reports from the beach
 # (1.0 = no correction yet); "reports" is how many reports it's based on.
 SPOTS = {
     "playa-hermosa": {"name": "Playa Hermosa", "area": "Puntarenas, near Jacó",
-                      "lat": 9.25, "lon": 275.25, "facing": 225, "scale": 1.0, "reports": 0},
+                      "lat": 9.25, "lon": 275.25, "beach": (9.56, -84.60), "facing": 225, "scale": 1.0, "reports": 0},
     "playitas":      {"name": "Playitas", "area": "Manuel Antonio, Quepos",
-                      "lat": 9.25, "lon": 275.75, "facing": 230, "scale": 0.78, "reports": 3},
+                      "lat": 9.25, "lon": 275.75, "beach": (9.396, -84.161), "facing": 230, "scale": 0.78, "reports": 3},
     "la-punta":      {"name": "La Punta", "area": "Dominicalito, near Dominical",
-                      "lat": 9.0, "lon": 276.0, "facing": 220, "scale": 1.0, "reports": 0},
+                      "lat": 9.0, "lon": 276.0, "beach": (9.2158, -83.8365), "facing": 220, "scale": 1.0, "reports": 0},
 }
 FORECAST_HOURS = range(0, 169, 3)   # 7 days, every 3 hours
 LIGHT_WIND_MS = 3.0        # below this the wind barely matters

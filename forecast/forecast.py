@@ -19,6 +19,11 @@ import pandas as pd
 import requests
 import xarray as xr
 
+try:
+    import pyTMD.constituents
+except ImportError:      # tides are optional; the forecast still works without them
+    pyTMD = None
+
 # ---------------------------------------------------------------- settings
 # One entry per surf spot. "lat"/"lon" is the nearest model grid point in open water
 # (degrees north / degrees east, so 84.75 W = 275.25 E). "facing" is the compass
@@ -185,6 +190,34 @@ def surf_estimate(forecast, facing, scale=1.0):
     return surf
 
 
+# ---------------------------------------------------------------- tides
+TIDE_FILE = Path(__file__).with_name("tide_constants.json")
+
+
+def tide_curve(slug, start, hours=168, step_min=30):
+    """Predicted tide (m above mean sea level) at a spot, from its harmonic constants.
+
+    height(t) = sum over constituents of  f * A * cos(V(t) + u - g)
+    A, g: amplitude and phase lag at the spot (from the GOT4.10c model)
+    V(t): the constituent's astronomical argument (where the Moon and Sun are)
+    f, u: slow 18.6-year corrections for the tilt of the Moon's orbit
+    """
+    if pyTMD is None or not TIDE_FILE.exists():
+        return []
+    consts = json.loads(TIDE_FILE.read_text()).get(slug)
+    if not consts:
+        return []
+    names = list(consts)
+    amp = np.array([consts[c][0] for c in names])
+    lag = np.radians([consts[c][1] for c in names])
+    start = pd.Timestamp(start).floor("h")
+    times = pd.date_range(start, periods=hours * 60 // step_min + 1, freq=f"{step_min}min")
+    mjd = (times - pd.Timestamp("1970-01-01", tz="UTC")).total_seconds().values / 86400 + 40587.0  # Modified Julian Day
+    u, f, V = pyTMD.constituents.arguments(mjd, names, corrections="GOT")
+    height = (f * amp * np.cos(np.radians(V) + u - lag)).sum(axis=1)
+    return [{"time": t.tz_convert(TIMEZONE).isoformat(), "m": round(float(h), 2)} for t, h in zip(times, height)]
+
+
 # ---------------------------------------------------------------- output
 def to_json(slug, surf, run_time):
     hours = [
@@ -215,6 +248,7 @@ def to_json(slug, surf, run_time):
         "scale": SPOTS[slug]["scale"],
         "reports_used": SPOTS[slug]["reports"],
         "hours": hours,
+        "tide": tide_curve(slug, surf.index[0].tz_convert("UTC")),
     }
 
 

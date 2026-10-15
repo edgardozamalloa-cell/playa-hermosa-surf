@@ -14,6 +14,8 @@
   --rule: #d8e1e5;
   --sea: #0e7c86;          /* accent: surf line and band */
   --sea-soft: rgba(14, 124, 134, 0.18);
+  --tide: #8a5a9e;
+  --tide-soft: rgba(138, 90, 158, 0.14);
   --night: rgba(15, 39, 51, 0.05);
   --good: #2f8f4e;
   --fairgood: #7aa83a;
@@ -27,13 +29,13 @@
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --bg: #0b1a21; --surface: #10242d; --ink: #e3eef1; --muted: #8fa6af; --rule: #23404b;
-    --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --night: rgba(255, 255, 255, 0.035);
+    --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --tide: #c9a0dc; --tide-soft: rgba(201, 160, 220, 0.16); --night: rgba(255, 255, 255, 0.035);
     --good: #5cc27c; --fairgood: #a4c95a; --fair: #e6ad3c; --poor: #ec7560; color-scheme: dark;
   }
 }
 :root[data-theme="dark"] {
   --bg: #0b1a21; --surface: #10242d; --ink: #e3eef1; --muted: #8fa6af; --rule: #23404b;
-  --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --night: rgba(255, 255, 255, 0.035);
+  --sea: #3fc1c9; --sea-soft: rgba(63, 193, 201, 0.2); --tide: #c9a0dc; --tide-soft: rgba(201, 160, 220, 0.16); --night: rgba(255, 255, 255, 0.035);
   --good: #5cc27c; --fairgood: #a4c95a; --fair: #e6ad3c; --poor: #ec7560; color-scheme: dark;
 }
 
@@ -122,11 +124,12 @@ footer a { color: var(--sea); }
 
   <section>
     <h2>Next 7 days <span style="font: 400 0.8rem var(--body); color: var(--muted)">(surf height in feet)</span></h2>
-    <div class="chart-wrap"><svg id="chart" viewBox="0 0 900 300" role="img" aria-label="Surf height forecast for the next 7 days"></svg></div>
+    <div class="chart-wrap"><svg id="chart" viewBox="0 0 900 360" role="img" aria-label="Surf height forecast for the next 7 days"></svg></div>
     <div class="legend">
       <span><i style="background: var(--sea)"></i>Typical surf</span>
       <span><i style="background: var(--sea-soft)"></i>Up to set waves</span>
       <span><i style="background: var(--night)"></i>Night</span>
+      <span><i style="background: var(--tide)"></i>Tide</span>
       <span><i style="background: var(--good)"></i>Light or offshore wind</span>
       <span><i style="background: var(--fair)"></i>Cross-shore</span>
       <span><i style="background: var(--poor)"></i>Onshore</span>
@@ -200,9 +203,10 @@ function renderNow(hours) {
 }
 
 // ---- Chart -----------------------------------------------------------------
-function renderChart(hours) {
+function renderChart(hours, tide) {
   const svg = document.getElementById("chart");
-  const W = 900, H = 300, L = 40, R = 12, T = 14, B = 64;   // plot margins
+  svg.replaceChildren();
+  const W = 900, H = 360, L = 40, R = 12, T = 14, B = 124;   // plot margins
   const t0 = hours[0].date.getTime(), t1 = hours.at(-1).date.getTime();
   const maxFt = Math.max(4, Math.ceil(Math.max(...hours.map(h => h.sets_ft)) / 2) * 2);
   const x = t => L + (t - t0) / (t1 - t0) * (W - L - R);
@@ -234,14 +238,36 @@ function renderChart(hours) {
   svg.append(el("polygon", { points: [...top, ...bottom].join(" "), fill: "var(--sea-soft)" }));
   svg.append(el("polyline", { points: hours.map(h => `${x(h.date.getTime())},${y(h.surf_ft)}`).join(" "), fill: "none", stroke: "var(--sea)", "stroke-width": 2.5, "stroke-linejoin": "round" }));
 
+  // tide in its own band under the day labels (feet above or below mean sea level)
+  const tideIn = (tide || []).map(p => ({ t: new Date(p.time).getTime(), ft: p.m * 3.281 })).filter(p => p.t >= t0 && p.t <= t1);
+  if (tideIn.length) {
+    const top = base + 32, bot = base + 86;
+    const lim = Math.max(...tideIn.map(p => Math.abs(p.ft)));
+    const yt = ft => (top + bot) / 2 - ft / lim * (bot - top) / 2;
+    svg.append(el("line", { x1: L, x2: W - R, y1: yt(0), y2: yt(0), stroke: "var(--rule)", "stroke-width": 1 }));
+    svg.append(el("text", { x: L - 8, y: yt(0) + 4, "text-anchor": "end", "font-size": 11, fill: "var(--muted)", "font-family": "var(--mono)" }, "tide"));
+    const area = [`${x(tideIn[0].t)},${yt(0)}`, ...tideIn.map(p => `${x(p.t)},${yt(p.ft)}`), `${x(tideIn.at(-1).t)},${yt(0)}`];
+    svg.append(el("polygon", { points: area.join(" "), fill: "var(--tide-soft)" }));
+    svg.append(el("polyline", { points: tideIn.map(p => `${x(p.t)},${yt(p.ft)}`).join(" "), fill: "none", stroke: "var(--tide)", "stroke-width": 1.5 }));
+    tideIn.forEach((p, i) => {
+      const a = tideIn[i - 1], b = tideIn[i + 1];
+      if (!a || !b) return;
+      const high = p.ft > a.ft && p.ft >= b.ft, low = p.ft < a.ft && p.ft <= b.ft;
+      if (!high && !low) return;
+      const dot = el("circle", { cx: x(p.t), cy: yt(p.ft), r: 3, fill: "var(--tide)" });
+      dot.append(el("title", {}, `${high ? "High" : "Low"} tide ${fmt(new Date(p.t), { weekday: "short", hour: "numeric", minute: "2-digit" })}: ${p.ft >= 0 ? "+" : ""}${p.ft.toFixed(1)} ft`));
+      svg.append(dot);
+    });
+  }
+
   // wind strip under the axis
   const cell = (W - L - R) / hours.length;
   hours.forEach(h => {
-    const box = el("rect", { x: x(h.date.getTime()) - cell / 2 + 1, y: base + 30, width: Math.max(cell - 2, 2), height: 10, rx: 2, fill: WIND_COLORS[h.wind] });
+    const box = el("rect", { x: x(h.date.getTime()) - cell / 2 + 1, y: base + 98, width: Math.max(cell - 2, 2), height: 10, rx: 2, fill: WIND_COLORS[h.wind] });
     box.append(el("title", {}, `${fmt(h.date, { weekday: "short", hour: "numeric" })}: ${Math.round(h.wind_kn)} kn ${compass(h.wind_dir_deg)}, ${h.wind}`));
     svg.append(box);
   });
-  svg.append(el("text", { x: L - 8, y: base + 39, "text-anchor": "end", "font-size": 11, fill: "var(--muted)", "font-family": "var(--mono)" }, "wind"));
+  svg.append(el("text", { x: L - 8, y: base + 107, "text-anchor": "end", "font-size": 11, fill: "var(--muted)", "font-family": "var(--mono)" }, "wind"));
 }
 
 // ---- Day cards and hourly tables --------------------------------------------
@@ -322,7 +348,7 @@ function showSpot(slug) {
     document.getElementById("run").textContent =
       `NOAA model run ${fmt(run, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Costa Rica time`;
     renderNow(hours);
-    renderChart(hours);
+    renderChart(hours, data.tide);
     const days = groupByDay(hours);
     renderDays(days);
     renderHours(days);

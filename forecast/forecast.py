@@ -35,7 +35,7 @@ SPOTS = {
     "playa-hermosa": {"name": "Playa Hermosa", "area": "Puntarenas, near Jacó",
                       "lat": 9.25, "lon": 275.25, "beach": (9.56, -84.60), "facing": 225, "scale": 1.0, "reports": 0},
     "playitas":      {"name": "Playitas", "area": "Manuel Antonio, Quepos",
-                      "lat": 9.25, "lon": 275.75, "beach": (9.396, -84.161), "facing": 230, "scale": 0.78, "reports": 3},
+                      "lat": 9.25, "lon": 275.75, "beach": (9.396, -84.161), "facing": 230, "scale": 0.78, "reports": 4},
     "la-punta":      {"name": "La Punta", "area": "Dominicalito, near Dominical",
                       "lat": 9.0, "lon": 276.0, "beach": (9.2158, -83.8365), "facing": 220, "scale": 1.0, "reports": 0},
 }

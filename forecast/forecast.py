@@ -37,7 +37,7 @@ SPOTS = {
     "playitas":      {"name": "Playitas", "area": "Manuel Antonio, Quepos",
                       "lat": 9.25, "lon": 275.75, "beach": (9.396, -84.161), "facing": 230, "scale": 0.78, "reports": 4},
     "la-punta":      {"name": "La Punta", "area": "Dominicalito, near Dominical",
-                      "lat": 9.0, "lon": 276.0, "beach": (9.2158, -83.8365), "facing": 220, "scale": 1.0, "reports": 0},
+                      "lat": 9.0, "lon": 276.0, "beach": (9.2158, -83.8365), "facing": 220, "scale": 0.84, "reports": 2},
 }
 FORECAST_HOURS = range(0, 169, 3)   # 7 days, every 3 hours
 LIGHT_WIND_MS = 3.0        # below this the wind barely matters

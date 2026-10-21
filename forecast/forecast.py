@@ -174,6 +174,11 @@ def wind_quality(speed, direction_from, facing):
 
 def surf_estimate(forecast, facing, scale=1.0):
     surf = pd.DataFrame(index=forecast.index)
+    # Sometimes the model has no second swell at a point (blank values). Treat it as zero
+    # so the run doesn't crash; the page shows "–" for a missing swell.
+    forecast = forecast.copy()
+    swell2_cols = ["swell2_height_m", "swell2_period_s", "swell2_direction_deg"]
+    forecast[swell2_cols] = forecast[swell2_cols].fillna(0)
     s1 = breaker_height(forecast["swell1_height_m"], forecast["swell1_period_s"], forecast["swell1_direction_deg"], facing)
     s2 = breaker_height(forecast["swell2_height_m"], forecast["swell2_period_s"], forecast["swell2_direction_deg"], facing)
     surf["surf_ft"] = np.sqrt(s1**2 + s2**2) * M_TO_FT * scale

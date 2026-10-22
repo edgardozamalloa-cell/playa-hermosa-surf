@@ -65,7 +65,7 @@ section h2 { font: 700 1.35rem/1.1 var(--display); letter-spacing: 0.02em; margi
 .tip b { font: 600 0.75rem var(--mono); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); display: block; margin-bottom: 2px; }
 .tip .surf { font: 700 1.3rem var(--display); color: var(--sea); }
 .tip .k { color: var(--muted); }
-.chart-wrap svg { display: block; width: 100%; min-width: 620px; height: auto; }
+.chart-wrap svg { display: block; width: 100%; height: auto; }
 .legend { display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 0.8rem; color: var(--muted); margin-top: 8px; }
 .legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -2px; margin-right: 5px; }
 
@@ -213,12 +213,21 @@ function renderNow(hours) {
 }
 
 // ---- Chart -----------------------------------------------------------------
+let lastChart = null, lastWidth = 0;
+window.addEventListener("resize", () => {   // redraw when the screen width changes (e.g. phone rotated)
+  const w = document.querySelector(".chart-wrap").clientWidth;
+  if (lastChart && w !== lastWidth) { lastWidth = w; renderChart(...lastChart); }
+});
 function renderChart(allHours, tide) {
   const svg = document.getElementById("chart");
   svg.replaceChildren();
-  const W = 900, H = 364, L = 44, R = 12, T = 14, B = 124;   // plot margins
-  const tStart = allHours[0].date.getTime();
-  const hours = allHours.filter(h => h.date.getTime() <= tStart + CHART_DAYS * 24 * 3600e3);
+  // On narrow screens use a narrower drawing so the 3 days fit and the text stays readable.
+  const W = Math.round(Math.min(900, Math.max(480, (svg.parentElement.clientWidth - 16) * 1.35)));
+  const H = 364, L = 44, R = 12, T = 14, B = 124;   // plot margins
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  // Start at the current time (minus one 3-hour step), so the chart always shows 3 days ahead.
+  const tStart = Math.max(allHours[0].date.getTime(), Date.now() - 3 * 3600e3);
+  const hours = allHours.filter(h => h.date.getTime() >= tStart && h.date.getTime() <= tStart + (CHART_DAYS * 24 + 3) * 3600e3);
   const t0 = hours[0].date.getTime(), t1 = hours.at(-1).date.getTime();
   const step = UNITS === "m" ? 0.5 : 2;
   const maxH = Math.max(step * 3, Math.ceil(Math.max(...hours.map(h => toUnit(h.sets_ft))) / step) * step);
@@ -406,6 +415,7 @@ function showSpot(slug) {
       `NOAA model run ${fmt(run, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })} Costa Rica time`;
     renderNow(hours);
     renderChart(hours, data.tide);
+    lastChart = [hours, data.tide];
     const days = groupByDay(hours);
     renderDays(days);
     renderHours(days);
